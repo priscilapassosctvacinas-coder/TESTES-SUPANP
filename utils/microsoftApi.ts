@@ -6,8 +6,14 @@ const TENANT_ID = 'ctvacinas974.onmicrosoft.com'; // Use a tenant-specific domai
 const SHAREPOINT_HOST = 'ctvacinas974.sharepoint.com';
 const SITE_NAME = 'sites/NegcioseParcerias';
 const DRIVE_NAME = 'Documentos';
-export const DATABASE_FILE_PATH = '/General/DatabaseSupabase.jason';
+export const DATABASE_FILE_PATH = '/General/DatabaseSpabase.json';
 export const LEGACY_DATABASE_FILE_PATH = '/General/database.json';
+const FALLBACK_DATABASE_PATHS = [
+    '/General/DatabaseSpabase.json',
+    '/General/DatabaseSupabase.jason',
+    '/General/DatabaseSupabase.json',
+    '/General/database.json'
+];
 const BACKUP_FOLDER_PATH = '/General'; // Where backup CSVs will go
 
 const msalConfig: any = {
@@ -145,19 +151,19 @@ export const downloadDatabase = async (instance: any): Promise<AppState> => {
     const driveId = await getDriveId(instance, siteId);
     const token = await getGraphToken(instance);
 
-    // 1. Try download from new DatabaseSupabase.jason
-    let response = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/root:${DATABASE_FILE_PATH}:/content`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    // 2. Fallback to legacy database.json if DatabaseSupabase.jason does not exist yet
-    if (response.status === 404) {
-        response = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/root:${LEGACY_DATABASE_FILE_PATH}:/content`, {
+    // Try download from DatabaseSpabase.json and fallback paths
+    let response: any = null;
+    for (const filePath of FALLBACK_DATABASE_PATHS) {
+        response = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/root:${filePath}:/content`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        if (response.ok) {
+            console.log(`Dados encontrados no SharePoint em: ${filePath}`);
+            break;
+        }
     }
 
-    if (response.status === 404) {
+    if (!response || response.status === 404) {
         const notFoundError = new Error("Database file not found on SharePoint.") as Error & { isNotFound?: boolean };
         notFoundError.isNotFound = true;
         throw notFoundError;
@@ -165,6 +171,7 @@ export const downloadDatabase = async (instance: any): Promise<AppState> => {
     if (!response.ok) throw new Error(`Failed to download database: ${response.statusText}`);
     return response.json();
 };
+
 
 
 

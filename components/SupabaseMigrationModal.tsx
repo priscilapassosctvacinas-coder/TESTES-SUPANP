@@ -298,7 +298,7 @@ ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';`;
             const todayStr = new Date().toISOString().split('T')[0];
             await setLastSharepointBackupDate(todayStr, { forced: true, time: new Date().toISOString() });
             setLastBackupDate(todayStr);
-            setStatusMessage("✅ Backup completo no SharePoint (DatabaseSupabase.jason) realizado com sucesso!");
+            setStatusMessage("✅ Backup completo no SharePoint (DatabaseSpabase.json) realizado com sucesso!");
         } catch (e: any) {
             console.error("Erro no backup do SharePoint:", e);
             setStatusMessage(`❌ Falha no backup do SharePoint: ${e.message || e}`);

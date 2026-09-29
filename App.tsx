@@ -322,7 +322,7 @@ const App: React.FC = () => {
             }
 
             // ATENÇÃO: Envia para o SharePoint um BACKUP dos dados presentes no Supabase / aplicação
-            // O arquivo salvo é nomeado 'DatabaseSupabase.jason'
+            // O arquivo salvo é nomeado 'DatabaseSpabase.json'
             try {
                 setIsBackingUpSharePoint(true);
                 const currentAppState: AppState = {
@@ -345,7 +345,7 @@ const App: React.FC = () => {
                     timestamp: new Date().toISOString()
                 });
                 setIsSharePointDailyBackedUp(true);
-                console.log(`Backup diário no SharePoint (DatabaseSupabase.jason) realizado com sucesso para ${todayStr}.`);
+                console.log(`Backup diário no SharePoint (DatabaseSpabase.json) realizado com sucesso para ${todayStr}.`);
                 await logSyncEvent('sharepoint_daily_backup', 'success', { date: todayStr });
             } catch (err: any) {
                 console.error("Falha ao realizar backup diário no SharePoint:", err);
@@ -389,7 +389,7 @@ const App: React.FC = () => {
                 timestamp: new Date().toISOString()
             });
             setIsSharePointDailyBackedUp(true);
-            alert("Backup completo no SharePoint (DatabaseSupabase.jason) realizado com sucesso!");
+            alert("Backup completo no SharePoint (DatabaseSpabase.json) realizado com sucesso!");
         } catch (error: any) {
             console.error("Erro no backup do SharePoint:", error);
             alert(`Falha no backup do SharePoint: ${error.message || 'Erro desconhecido'}`);

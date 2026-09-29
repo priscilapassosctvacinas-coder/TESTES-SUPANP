@@ -14,7 +14,7 @@
 -- 2. Os arquivos binários continuam sendo armazenados no SharePoint. O Supabase
 --    armazena apenas os links (URLs) e metadados para acesso a esses arquivos.
 -- 3. Em todo primeiro login do dia, um backup completo dos dados é enviado para o
---    SharePoint no arquivo '/General/DatabaseSupabase.jason'.
+--    SharePoint no arquivo '/General/DatabaseSpabase.json'.
 -- 4. O arquivo no SharePoint NUNCA sobrepõe os dados presentes no Supabase.
 --
 -- COMO EXECUTAR NO SUPABASE DASHBOARD:
