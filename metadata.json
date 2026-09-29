@@ -1,0 +1,8 @@
+{
+  "name": "Remix Negócios e Parcerias CTV SUPABASE",
+  "description": "Uma aplicação completa para gerenciar parcerias de negócios, instrumentos jurídicos, históricos e tarefas, projetada para o CTVacinas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
