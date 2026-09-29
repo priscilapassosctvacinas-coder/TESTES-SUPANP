@@ -19,6 +19,7 @@ interface SupabaseMigrationModalProps {
     msalInstance: any;
     isMicrosoftSignedIn: boolean;
     onDataUpdatedFromSupabase?: () => void;
+    onOpenJsonImportModal?: () => void;
 }
 
 export const SupabaseMigrationModal: React.FC<SupabaseMigrationModalProps> = ({
@@ -27,7 +28,9 @@ export const SupabaseMigrationModal: React.FC<SupabaseMigrationModalProps> = ({
     appState,
     msalInstance,
     isMicrosoftSignedIn,
+    onOpenJsonImportModal,
 }) => {
+
     const [health, setHealth] = useState<SupabaseHealthCheck | null>(null);
     const [isLoadingHealth, setIsLoadingHealth] = useState(false);
     const [isMigrating, setIsMigrating] = useState(false);
@@ -431,7 +434,28 @@ ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';`;
                     </div>
                 </div>
 
+                {/* Ação 4: Importação via Arquivo .JSON */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h4 className="font-semibold text-slate-800">4. Restaurar de Arquivo DatabaseSpabase.json</h4>
+                            <p className="text-xs text-slate-500">
+                                Importe um arquivo .JSON salvo no seu computador para carregar os dados no sistema e sincronizar no Supabase.
+                            </p>
+                        </div>
+                        {onOpenJsonImportModal && (
+                            <button
+                                onClick={onOpenJsonImportModal}
+                                className="px-3 py-1.5 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded transition-colors shadow-xs"
+                            >
+                                Importar .JSON
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 {/* Mensagem de Feedback */}
+
                 {statusMessage && (
                     <div className={`p-3 rounded-lg text-sm ${
                         statusMessage.startsWith('✅') 

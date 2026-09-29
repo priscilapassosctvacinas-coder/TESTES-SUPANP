@@ -22,6 +22,7 @@ interface SettingsViewProps {
     onUpdateInternalProject: (id: string, newName: string) => void;
     onDeleteInternalProject: (projectId: string) => void;
     onOpenMaintenanceModal?: () => void;
+    onOpenJsonImportModal?: () => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({ 
@@ -41,8 +42,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     onSaveInternalProject,
     onUpdateInternalProject,
     onDeleteInternalProject,
-    onOpenMaintenanceModal
+    onOpenMaintenanceModal,
+    onOpenJsonImportModal
 }) => {
+
     const partnershipFileRef = useRef<HTMLInputElement>(null);
     const instrumentFileRef = useRef<HTMLInputElement>(null);
     const userFileRef = useRef<HTMLInputElement>(null);
@@ -792,9 +795,45 @@ const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Import Data */}
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Importar Dados</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-lg shadow-md space-y-6">
+                <div className="border-b pb-3">
+                    <h3 className="text-lg font-semibold text-gray-800">Importação e Exportação de Dados</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Alimente o sistema ou restaure backups através de arquivos estruturados .JSON ou planilhas CSV.</p>
+                </div>
+
+                {/* Destaque Principal: Importação via Arquivo .JSON */}
+                <div className="bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 border border-teal-200 rounded-xl p-5 shadow-xs">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-2xl">📦</span>
+                                <h4 className="text-base font-bold text-teal-950">
+                                    Importação Completa via Arquivo .JSON (DatabaseSpabase.json)
+                                </h4>
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-teal-600 text-white tracking-wider">
+                                    Recomendado
+                                </span>
+                            </div>
+                            <p className="text-xs text-teal-900 max-w-2xl leading-relaxed">
+                                Importe diretamente seu arquivo <strong>DatabaseSpabase.json</strong> (ou qualquer backup .JSON do sistema) para carregar de uma só vez parcerias, instrumentos, tarefas, usuários, projetos internos e propostas com sincronização imediata no Supabase.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                            {onOpenJsonImportModal && (
+                                <button
+                                    type="button"
+                                    onClick={onOpenJsonImportModal}
+                                    className="w-full md:w-auto flex items-center justify-center px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm rounded-lg shadow-sm transition-colors gap-2"
+                                >
+                                    <UploadIcon className="w-4 h-4" />
+                                    Importar Arquivo .JSON
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
                     {/* Partnerships Import */}
                     <div className="p-4 border rounded-md">
                         <h4 className="font-medium text-gray-700">Parcerias</h4>
@@ -848,6 +887,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <p className="text-xs text-gray-500 mt-4 italic">* Os templates utilizam ponto e vírgula (;) como separador, padrão do Excel brasileiro.</p>
             </div>
+
             
             {/* User Management */}
             <div className="bg-white p-6 rounded-lg shadow-md">

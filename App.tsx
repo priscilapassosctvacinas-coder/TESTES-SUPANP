@@ -23,6 +23,8 @@ import MaintenanceView from './components/MaintenanceView';
 import MaintenanceModal from './components/MaintenanceModal';
 import { SupabaseMigrationBanner } from './components/SupabaseMigrationBanner';
 import { SupabaseMigrationModal } from './components/SupabaseMigrationModal';
+import { JsonImportModal } from './components/JsonImportModal';
+
 import { View, Partnership, LegalInstrument, Task, User, UploadedFile, HistoryEntry, LegalInstrumentAddendum, PartnershipStatus, Notification, AppState, SyncStatus, SystemSettings, InternalProject, Study, Essay, Proposal } from './types';
 import { MOCK_USERS, MOCK_PARTNERSHIPS, MOCK_LEGAL_INSTRUMENTS, MOCK_TASKS, DEFAULT_SETTINGS } from './constants';
 import * as MicrosoftApi from './utils/microsoftApi';
@@ -97,6 +99,8 @@ const App: React.FC = () => {
     const [isSharePointDailyBackedUp, setIsSharePointDailyBackedUp] = useState(false);
     const [isBackingUpSharePoint, setIsBackingUpSharePoint] = useState(false);
     const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+    const [isJsonImportModalOpen, setIsJsonImportModalOpen] = useState(false);
+
 
     
     // Deep Linking Handler
@@ -1122,6 +1126,124 @@ const App: React.FC = () => {
         }
     };
 
+    const handleApplyImportedJsonData = async (importedData: Partial<AppState>, mode: 'replace' | 'merge') => {
+        let nextPartnerships = [...partnerships];
+        let nextInstruments = [...legalInstruments];
+        let nextTasks = [...tasks];
+        let nextUsers = [...users];
+        let nextInternalProjects = [...internalProjects];
+        let nextStudies = [...studies];
+        let nextEssays = [...essays];
+        let nextProposals = [...proposals];
+        let nextSettings = { ...systemSettings };
+
+        if (mode === 'replace') {
+            if (importedData.partnerships) nextPartnerships = importedData.partnerships;
+            if (importedData.legalInstruments) nextInstruments = importedData.legalInstruments;
+            if (importedData.tasks) nextTasks = importedData.tasks;
+            if (importedData.users) {
+                const filtered = importedData.users.filter(u => u.email.toLowerCase() !== 'priscilapassos@ctvacinas.org');
+                nextUsers = [
+                    {
+                        id: 'user-priscila-master',
+                        name: 'Priscila Passos',
+                        email: 'priscilapassos@ctvacinas.org',
+                        role: 'Administrador Master',
+                        platform: 'Microsoft'
+                    },
+                    ...filtered
+                ];
+            }
+            if (importedData.internalProjects) nextInternalProjects = importedData.internalProjects;
+            if (importedData.studies) nextStudies = importedData.studies;
+            if (importedData.essays) nextEssays = importedData.essays;
+            if (importedData.proposals) nextProposals = importedData.proposals;
+            if (importedData.systemSettings) nextSettings = { ...systemSettings, ...importedData.systemSettings };
+        } else {
+            // Modo merge (mesclar)
+            if (importedData.partnerships) {
+                const map = new Map(nextPartnerships.map(p => [p.reference.toLowerCase(), p]));
+                importedData.partnerships.forEach(p => map.set(p.reference.toLowerCase(), p));
+                nextPartnerships = Array.from(map.values());
+            }
+            if (importedData.legalInstruments) {
+                const map = new Map(nextInstruments.map(i => [i.id, i]));
+                importedData.legalInstruments.forEach(i => map.set(i.id, i));
+                nextInstruments = Array.from(map.values()).sort((a, b) => b.id - a.id);
+            }
+            if (importedData.tasks) {
+                const map = new Map(nextTasks.map(t => [t.id, t]));
+                importedData.tasks.forEach(t => map.set(t.id, t));
+                nextTasks = Array.from(map.values());
+            }
+            if (importedData.users) {
+                const map = new Map(nextUsers.map(u => [u.email.toLowerCase(), u]));
+                importedData.users.forEach(u => map.set(u.email.toLowerCase(), u));
+                nextUsers = Array.from(map.values());
+            }
+            if (importedData.internalProjects) {
+                const map = new Map(nextInternalProjects.map(proj => [proj.name.toLowerCase(), proj]));
+                importedData.internalProjects.forEach(proj => map.set(proj.name.toLowerCase(), proj));
+                nextInternalProjects = Array.from(map.values());
+            }
+            if (importedData.proposals) {
+                const map = new Map(nextProposals.map(prop => [prop.id, prop]));
+                importedData.proposals.forEach(prop => map.set(prop.id, prop));
+                nextProposals = Array.from(map.values());
+            }
+            if (importedData.studies) {
+                const map = new Map(nextStudies.map(s => [s.id, s]));
+                importedData.studies.forEach(s => map.set(s.id, s));
+                nextStudies = Array.from(map.values());
+            }
+            if (importedData.essays) {
+                const map = new Map(nextEssays.map(e => [e.id, e]));
+                importedData.essays.forEach(e => map.set(e.id, e));
+                nextEssays = Array.from(map.values());
+            }
+            if (importedData.systemSettings) {
+                nextSettings = { ...systemSettings, ...importedData.systemSettings };
+            }
+        }
+
+        setPartnerships(nextPartnerships);
+        setLegalInstruments(nextInstruments);
+        setTasks(nextTasks);
+        setUsers(nextUsers);
+        setInternalProjects(nextInternalProjects);
+        setStudies(nextStudies);
+        setEssays(nextEssays);
+        setProposals(nextProposals);
+        setSystemSettings(nextSettings);
+
+        const newAppState: AppState = {
+            users: nextUsers,
+            partnerships: nextPartnerships,
+            legalInstruments: nextInstruments,
+            tasks: nextTasks,
+            sentExpirationWarnings,
+            systemSettings: nextSettings,
+            readHistoryIds,
+            internalProjects: nextInternalProjects,
+            studies: nextStudies,
+            essays: nextEssays,
+            proposals: nextProposals
+        };
+
+        // Salvar imediatamente no Supabase
+        await saveAllMetadataToSupabase(newAppState);
+
+        // Se autenticado com a Microsoft, sincronizar backup no SharePoint como DatabaseSpabase.json
+        if (isMicrosoftSignedIn && msalInstance) {
+            try {
+                await MicrosoftApi.uploadDatabase(msalInstance, newAppState);
+            } catch (err) {
+                console.error("Erro ao sincronizar backup no SharePoint após importação JSON:", err);
+            }
+        }
+    };
+
+
     const toCSV = (data: any[], headers: string[], separator = ';') => {
         const headerRow = headers.join(separator);
         const rows = data.map(row => headers.map(fieldName => {
@@ -1317,7 +1439,27 @@ const App: React.FC = () => {
                     addHistoryEntry={addHistoryEntry}
                     onNavigateToProposals={() => setActiveView(View.Proposals)}
                 />;
-            case View.Settings: return <SettingsView currentUser={currentUser!} users={users} onNewUser={() => handleOpenUserModal(null)} onEditUser={handleOpenUserModal} onDeleteUser={handleDeleteUser} onImportPartnerships={handleImportPartnerships} onImportLegalInstruments={handleImportLegalInstruments} onImportUsers={handleImportUsers} systemSettings={systemSettings} onUpdateSettings={handleUpdateSettings} onCloudBackup={handleCloudBackup} isBackingUp={isBackingUp} internalProjects={internalProjects} onSaveInternalProject={handleSaveInternalProject} onUpdateInternalProject={handleUpdateInternalProject} onDeleteInternalProject={handleDeleteInternalProject} onOpenMaintenanceModal={() => setIsMaintenanceModalOpen(true)} />;
+            case View.Settings: return <SettingsView 
+                currentUser={currentUser!} 
+                users={users} 
+                onNewUser={() => handleOpenUserModal(null)} 
+                onEditUser={handleOpenUserModal} 
+                onDeleteUser={handleDeleteUser} 
+                onImportPartnerships={handleImportPartnerships} 
+                onImportLegalInstruments={handleImportLegalInstruments} 
+                onImportUsers={handleImportUsers} 
+                systemSettings={systemSettings} 
+                onUpdateSettings={handleUpdateSettings} 
+                onCloudBackup={handleCloudBackup} 
+                isBackingUp={isBackingUp} 
+                internalProjects={internalProjects} 
+                onSaveInternalProject={handleSaveInternalProject} 
+                onUpdateInternalProject={handleUpdateInternalProject} 
+                onDeleteInternalProject={handleDeleteInternalProject} 
+                onOpenMaintenanceModal={() => setIsMaintenanceModalOpen(true)} 
+                onOpenJsonImportModal={() => setIsJsonImportModalOpen(true)}
+            />;
+
             default: 
                 return <Dashboard 
                             partnerships={partnerships} 
@@ -1533,9 +1675,30 @@ const App: React.FC = () => {
                 }}
                 msalInstance={msalInstance}
                 isMicrosoftSignedIn={isMicrosoftSignedIn}
+                onOpenJsonImportModal={() => setIsJsonImportModalOpen(true)}
+            />
+            <JsonImportModal
+                isOpen={isJsonImportModalOpen}
+                onClose={() => setIsJsonImportModalOpen(false)}
+                currentAppState={{
+                    users,
+                    partnerships,
+                    legalInstruments,
+                    tasks,
+                    sentExpirationWarnings,
+                    systemSettings,
+                    readHistoryIds,
+                    internalProjects,
+                    studies,
+                    essays,
+                    proposals
+                }}
+                currentUser={currentUser!}
+                onApplyImportedData={handleApplyImportedJsonData}
             />
         </div>
     );
+
 };
 
 
