@@ -525,24 +525,68 @@ const App: React.FC = () => {
     }, [isMicrosoftSignedIn, msalInstance]);
     
     useEffect(() => {
-        if (isMicrosoftSignedIn && msalInstance && !currentUser && syncStatus === 'synced') {
+        if (isMicrosoftSignedIn && msalInstance && !currentUser) {
             const account = msalInstance.getActiveAccount() || (msalInstance.getAllAccounts().length > 0 ? msalInstance.getAllAccounts()[0] : null);
             
-            if (account && account.username) {
-                const userInDb = users.find(u => u.email.toLowerCase() === account.username.toLowerCase());
-                if (userInDb) {
-                    setCurrentUser(userInDb);
-                } else {
-                    alert('Sua conta Microsoft não está autorizada a acessar este sistema. Contate um administrador.');
-                    handleLogout();
+            let email = '';
+            let name = '';
+
+            if (account) {
+                email = (
+                    account.username || 
+                    (account.idTokenClaims as any)?.preferred_username || 
+                    (account.idTokenClaims as any)?.email || 
+                    (account.idTokenClaims as any)?.upn || 
+                    ''
+                ).toLowerCase().trim();
+                name = account.name || (account.idTokenClaims as any)?.name || '';
+            }
+
+            if (!email) {
+                console.error("Conta Microsoft sem e-mail identificável.");
+                alert("Não foi possível identificar o e-mail da sua conta Microsoft. Por favor, tente entrar novamente.");
+                handleLogout();
+                return;
+            }
+
+            console.log(`Validando acesso para a conta Microsoft autenticada: ${email}`);
+
+            let userInDb = users.find(u => u.email.toLowerCase() === email);
+
+            // Se for Priscila Passos autenticada via Microsoft, assegurar papel de Administrador Master
+            if (email === 'priscilapassos@ctvacinas.org') {
+                if (!userInDb) {
+                    const masterAdmin: User = {
+                        id: 'user-priscila-master',
+                        name: name || 'Priscila Passos',
+                        email: 'priscilapassos@ctvacinas.org',
+                        role: 'Administrador Master'
+                    };
+                    userInDb = masterAdmin;
+                    setUsers(prev => [masterAdmin, ...prev.filter(u => u.email.toLowerCase() !== masterAdmin.email.toLowerCase())]);
+                } else if (userInDb.role !== 'Administrador Master') {
+                    userInDb = { ...userInDb, role: 'Administrador Master' };
+                    setUsers(prev => prev.map(u => u.id === userInDb!.id ? userInDb! : u));
                 }
+            } else if (!userInDb) {
+                // Tenta buscar no mock pré-definido
+                const mockUser = MOCK_USERS.find(u => u.email.toLowerCase() === email);
+                if (mockUser) {
+                    userInDb = mockUser;
+                    setUsers(prev => [mockUser, ...prev.filter(u => u.id !== mockUser.id)]);
+                }
+            }
+
+            if (userInDb) {
+                setCurrentUser(userInDb);
             } else {
-                console.error("Não foi possível obter os detalhes da conta Microsoft após o login. Desconectando para segurança.");
-                alert("Ocorreu um erro ao verificar sua conta. Por favor, tente entrar novamente.");
+                alert(`A conta Microsoft (${email}) não possui autorização de acesso ao sistema. Solicite o cadastro a um administrador.`);
                 handleLogout();
             }
         }
-    }, [isMicrosoftSignedIn, msalInstance, users, currentUser, handleLogout, syncStatus]);
+    }, [isMicrosoftSignedIn, msalInstance, users, currentUser, handleLogout]);
+
+
 
     const addHistoryEntry = useCallback((partnershipId: string, description: string, link?: string) => {
         if (currentUser?.role === 'Consulta') return; // Restriction
@@ -1327,11 +1371,27 @@ const App: React.FC = () => {
 
     if (!currentUser) {
         return (
-            <div className="flex items-center justify-center h-screen bg-gray-100">
-                <p className="text-lg text-gray-600">Verificando usuário...</p>
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+                <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full text-center space-y-4">
+                    <div className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <h3 className="text-lg font-bold text-gray-800">Verificando autorização...</h3>
+                    <p className="text-sm text-gray-500">
+                        Validando credenciais da conta Microsoft junto à base de usuários autorizados do CTVacinas.
+                    </p>
+                    <div className="pt-4 border-t">
+                        <button
+                            onClick={handleLogout}
+                            className="text-xs text-gray-500 hover:text-red-600 hover:underline transition-colors"
+                        >
+                            Sair / Trocar de conta Microsoft
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
+
+
 
     // Intercept with Maintenance View if maintenance is active and user is NOT Administrador Master
     if (systemSettings.maintenanceMode?.enabled && currentUser.role !== 'Administrador Master') {

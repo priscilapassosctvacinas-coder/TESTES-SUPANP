@@ -240,3 +240,15 @@ ALTER TABLE public.np_proposals DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.np_system_settings DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.np_system_metadata DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.np_sync_logs DISABLE ROW LEVEL SECURITY;
+
+-- ==============================================================================
+-- USUÁRIO INICIAL: ADMINISTRADOR MASTER
+-- ==============================================================================
+INSERT INTO negocios_parcerias.users (id, name, email, role, platform)
+VALUES ('user-priscila-master', 'Priscila Passos', 'priscilapassos@ctvacinas.org', 'Administrador Master', 'Microsoft')
+ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';
+
+INSERT INTO public.np_users (id, name, email, role, platform)
+VALUES ('user-priscila-master', 'Priscila Passos', 'priscilapassos@ctvacinas.org', 'Administrador Master', 'Microsoft')
+ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';
+
