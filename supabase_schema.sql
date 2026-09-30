@@ -242,8 +242,24 @@ ALTER TABLE public.np_system_metadata DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.np_sync_logs DISABLE ROW LEVEL SECURITY;
 
 -- ==============================================================================
+-- ATUALIZAÇÃO DE CONSTRAINT DE ROLES (Garante aceitação de 'Administrador Master')
+-- ==============================================================================
+-- Caso a tabela já tenha sido criada anteriormente com a constraint antiga, atualizamos:
+ALTER TABLE IF EXISTS negocios_parcerias.users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE IF EXISTS negocios_parcerias.users DROP CONSTRAINT IF EXISTS users_role_check1;
+ALTER TABLE IF EXISTS negocios_parcerias.users ADD CONSTRAINT users_role_check 
+    CHECK (role IN ('Coordenador', 'Pesquisador', 'Administrador', 'Administrador Master', 'Consulta'));
+
+ALTER TABLE IF EXISTS public.np_users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE IF EXISTS public.np_users DROP CONSTRAINT IF EXISTS np_users_role_check;
+ALTER TABLE IF EXISTS public.np_users DROP CONSTRAINT IF EXISTS users_role_check1;
+ALTER TABLE IF EXISTS public.np_users ADD CONSTRAINT np_users_role_check 
+    CHECK (role IN ('Coordenador', 'Pesquisador', 'Administrador', 'Administrador Master', 'Consulta'));
+
+-- ==============================================================================
 -- USUÁRIO INICIAL: ADMINISTRADOR MASTER
 -- ==============================================================================
+
 INSERT INTO negocios_parcerias.users (id, name, email, role, platform)
 VALUES ('user-priscila-master', 'Priscila Passos', 'priscilapassos@ctvacinas.org', 'Administrador Master', 'Microsoft')
 ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';
