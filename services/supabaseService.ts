@@ -461,12 +461,15 @@ export async function loadAllMetadataFromSupabase(): Promise<Partial<AppState> |
         // Metadados adicionais
         let sentExpirationWarnings: Record<string, { sixty?: boolean, thirty?: boolean, seven?: boolean }> = {};
         let readHistoryIds: string[] = [];
+        let systemAuditLogs: any[] = [];
 
         (metadataRes.data || []).forEach((m: any) => {
             if (m.key === 'sent_expiration_warnings' && m.value) {
                 sentExpirationWarnings = m.value;
             } else if (m.key === 'read_history_ids' && Array.isArray(m.value)) {
                 readHistoryIds = m.value;
+            } else if (m.key === 'system_audit_logs' && Array.isArray(m.value)) {
+                systemAuditLogs = m.value;
             }
         });
 
@@ -481,8 +484,10 @@ export async function loadAllMetadataFromSupabase(): Promise<Partial<AppState> |
             proposals,
             systemSettings,
             sentExpirationWarnings,
-            readHistoryIds
+            readHistoryIds,
+            systemAuditLogs
         };
+
     } catch (error) {
         console.error("Erro ao carregar metadados do Supabase:", error);
         return null;
@@ -583,8 +588,10 @@ export async function saveAllMetadataToSupabase(state: AppState): Promise<{ succ
         // 11. System Metadata
         const metadataItems = [
             { key: 'sent_expiration_warnings', value: state.sentExpirationWarnings || {} },
-            { key: 'read_history_ids', value: state.readHistoryIds || [] }
+            { key: 'read_history_ids', value: state.readHistoryIds || [] },
+            { key: 'system_audit_logs', value: state.systemAuditLogs || [] }
         ];
+
 
         for (const item of metadataItems) {
             await getTableQuery('system_metadata').upsert({

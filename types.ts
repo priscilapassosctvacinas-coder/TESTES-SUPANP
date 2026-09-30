@@ -294,6 +294,19 @@ export interface Bolsa {
     dataAlteracao: string;
 }
 
+export interface SystemAuditLog {
+    id: string;
+    timestamp: string; // ISO string
+    userEmail: string;
+    userName: string;
+    userRole?: string;
+    action: 'Criação' | 'Edição' | 'Exclusão' | 'Importação' | 'Configuração' | 'Manutenção' | 'Backup';
+    entityType: 'Parceria' | 'Instrumento Jurídico' | 'Tarefa' | 'Usuário' | 'Projeto Interno' | 'Bolsa' | 'Proposta' | 'Estudos/Precificação' | 'Sistema';
+    entityId?: string;
+    title: string;
+    details: string;
+}
+
 export interface AppState {
     users: User[];
     partnerships: Partnership[];
@@ -306,4 +319,6 @@ export interface AppState {
     studies?: Study[];
     essays?: Essay[];
     proposals?: Proposal[];
+    systemAuditLogs?: SystemAuditLog[];
 }
+

@@ -25,7 +25,7 @@ import { SupabaseMigrationBanner } from './components/SupabaseMigrationBanner';
 import { SupabaseMigrationModal } from './components/SupabaseMigrationModal';
 import { JsonImportModal } from './components/JsonImportModal';
 
-import { View, Partnership, LegalInstrument, Task, User, UploadedFile, HistoryEntry, LegalInstrumentAddendum, PartnershipStatus, Notification, AppState, SyncStatus, SystemSettings, InternalProject, Study, Essay, Proposal } from './types';
+import { View, Partnership, LegalInstrument, Task, User, UploadedFile, HistoryEntry, LegalInstrumentAddendum, PartnershipStatus, Notification, AppState, SyncStatus, SystemSettings, InternalProject, Study, Essay, Proposal, SystemAuditLog } from './types';
 import { MOCK_USERS, MOCK_PARTNERSHIPS, MOCK_LEGAL_INSTRUMENTS, MOCK_TASKS, DEFAULT_SETTINGS } from './constants';
 import * as MicrosoftApi from './utils/microsoftApi';
 import * as NotificationService from './services/notificationService';
@@ -37,7 +37,9 @@ import {
     logSyncEvent 
 } from './services/supabaseService';
 import { parsePartnerships, parseLegalInstruments, parseUsers } from './utils/importService';
+import { loadAuditLogsFromLocalStorage, saveAuditLogsToLocalStorage, createAuditEntry, seedAuditLogsFromExistingData } from './services/auditLogService';
 import { CTVLogoIcon } from './components/Icons';
+
 
 
 type MicrosoftAuthState = 'pending' | 'signedIn' | 'signedOut';
@@ -55,6 +57,11 @@ const App: React.FC = () => {
     const [studies, setStudies] = useState<Study[]>([]);
     const [essays, setEssays] = useState<Essay[]>([]);
     const [proposals, setProposals] = useState<Proposal[]>([]);
+    const [systemAuditLogs, setSystemAuditLogs] = useState<SystemAuditLog[]>(() => {
+        const local = loadAuditLogsFromLocalStorage();
+        return local.length > 0 ? local : seedAuditLogsFromExistingData(MOCK_PARTNERSHIPS);
+    });
+
     
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [activeView, setActiveView] = useState<View>(View.Dashboard);
@@ -100,6 +107,29 @@ const App: React.FC = () => {
     const [isBackingUpSharePoint, setIsBackingUpSharePoint] = useState(false);
     const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
     const [isJsonImportModalOpen, setIsJsonImportModalOpen] = useState(false);
+
+    const recordAuditLog = useCallback((
+        action: SystemAuditLog['action'],
+        entityType: SystemAuditLog['entityType'],
+        title: string,
+        details: string,
+        entityId?: string
+    ) => {
+        const newEntry = createAuditEntry(currentUser, action, entityType, title, details, entityId);
+        setSystemAuditLogs(prev => {
+            const updated = [newEntry, ...prev];
+            saveAuditLogsToLocalStorage(updated);
+            return updated;
+        });
+    }, [currentUser]);
+
+    const handleClearAuditLogs = useCallback(() => {
+        if (currentUser?.role !== 'Administrador Master') return;
+        setSystemAuditLogs([]);
+        saveAuditLogsToLocalStorage([]);
+        recordAuditLog('Exclusão', 'Sistema', 'Limpeza de logs de auditoria', 'Todos os registros anteriores foram limpos pelo Administrador Master.');
+    }, [currentUser, recordAuditLog]);
+
 
 
     
@@ -210,8 +240,13 @@ const App: React.FC = () => {
                         if (data.studies) setStudies(data.studies);
                         if (data.essays) setEssays(data.essays);
                         if (data.proposals) setProposals(data.proposals);
+                        if (data.systemAuditLogs && data.systemAuditLogs.length > 0) {
+                            setSystemAuditLogs(data.systemAuditLogs);
+                            saveAuditLogsToLocalStorage(data.systemAuditLogs);
+                        }
 
                         isDataLoadedFromCloud.current = true;
+
                         isSupabasePopulated.current = true;
                         setSyncStatus('synced');
                         setLastSyncTime(new Date());
@@ -253,7 +288,9 @@ const App: React.FC = () => {
             studies,
             essays,
             proposals,
+            systemAuditLogs,
         };
+
 
         setSyncStatus('saving');
         try {
@@ -681,7 +718,9 @@ const App: React.FC = () => {
                 }));
 
                 setLegalInstruments(prev => prev.map(inst => inst.id === editingLegalInstrument.id ? updatedInstrument : inst));
+                recordAuditLog('Edição', 'Instrumento Jurídico', `Instrumento Jurídico Nº ${updatedInstrument.id} atualizado`, `Tipo: ${updatedInstrument.type} | Objeto: "${updatedInstrument.object}"`, String(updatedInstrument.id));
                 setEditingLegalInstrument(null);
+
 
             } else {
                 // CREATE MODE
@@ -721,6 +760,8 @@ const App: React.FC = () => {
                 };
 
                 setLegalInstruments(prev => [newInstrument, ...prev].sort((a,b) => b.id - a.id));
+                recordAuditLog('Criação', 'Instrumento Jurídico', `Novo Instrumento Jurídico Nº ${formattedId} cadastrado`, `Tipo: ${newInstrument.type} | Objeto: "${newInstrument.object}"`, String(newInstrument.id));
+
 
                 instrumentData.linkedPartnershipIds.forEach(pId => {
                     addHistoryEntry(pId, `Instrumento Jurídico vinculado: Nº ${formattedId} (${newInstrument.type})`, `#instrument-${newInstrument.id}`);
@@ -744,6 +785,7 @@ const App: React.FC = () => {
     };
 
     const handleDeleteLegalInstrument = (instrumentId: number) => {
+        const target = legalInstruments.find(inst => inst.id === instrumentId);
         if (window.confirm('Tem certeza de que deseja excluir este instrumento jurídico?')) {
             setLegalInstruments(prev => prev.filter(inst => inst.id !== instrumentId));
             // Remove link from partnerships
@@ -751,6 +793,7 @@ const App: React.FC = () => {
                 ...p,
                 linkedInstrumentIds: p.linkedInstrumentIds.filter(id => id !== instrumentId)
             })));
+            recordAuditLog('Exclusão', 'Instrumento Jurídico', `Instrumento Jurídico Nº ${String(instrumentId).padStart(4, '0')} excluído`, `Tipo: ${target?.type || 'N/A'} | Objeto: "${target?.object || 'N/A'}"`, String(instrumentId));
         }
     };
 
@@ -776,7 +819,8 @@ const App: React.FC = () => {
         const newAddendum: LegalInstrumentAddendum = { ...addendumData, id: uuidv4(), documentWebUrl: documentWebUrl };
         setLegalInstruments(prev => prev.map(inst => inst.id === instrumentId ? { ...inst, addendums: [...inst.addendums, newAddendum] } : inst));
         instrument.linkedPartnershipIds.forEach(pId => addHistoryEntry(pId, `Aditivo adicionado ao Instrumento Jurídico Nº ${String(instrument.id).padStart(4, '0')}.`));
-    }, [legalInstruments, addHistoryEntry, currentUser, msalInstance, isMicrosoftSignedIn]);
+        recordAuditLog('Edição', 'Instrumento Jurídico', `Termo aditivo adicionado ao Instrumento Nº ${String(instrumentId).padStart(4, '0')}`, `Nova expiração: ${addendumData.newExpirationDate}`, String(instrumentId));
+    }, [legalInstruments, addHistoryEntry, currentUser, msalInstance, isMicrosoftSignedIn, recordAuditLog]);
 
     const handleUpdateAddendum = useCallback(async (instrumentId: number, addendumId: string, updatedData: Partial<LegalInstrumentAddendum>, file: File | null) => {
         const instrument = legalInstruments.find(inst => inst.id === instrumentId);
@@ -806,8 +850,9 @@ const App: React.FC = () => {
             return inst;
         }));
         instrument.linkedPartnershipIds.forEach(pId => addHistoryEntry(pId, `Aditivo atualizado no Instrumento Jurídico Nº ${String(instrument.id).padStart(4, '0')}.`));
+        recordAuditLog('Edição', 'Instrumento Jurídico', `Termo aditivo atualizado no Instrumento Nº ${String(instrumentId).padStart(4, '0')}`, `Aditivo ID: ${addendumId}`, String(instrumentId));
 
-    }, [legalInstruments, addHistoryEntry, currentUser, msalInstance, isMicrosoftSignedIn]);
+    }, [legalInstruments, addHistoryEntry, currentUser, msalInstance, isMicrosoftSignedIn, recordAuditLog]);
 
 
     const handleDeleteAddendum = (instrumentId: number, addendumId: string) => {
@@ -818,8 +863,10 @@ const App: React.FC = () => {
                 }
                 return inst;
             }));
+            recordAuditLog('Exclusão', 'Instrumento Jurídico', `Termo aditivo removido do Instrumento Nº ${String(instrumentId).padStart(4, '0')}`, `Aditivo ID: ${addendumId}`, String(instrumentId));
         }
     };
+
 
     const handleOpenPartnershipModal = (partnership: Partnership | null = null) => {
         setEditingPartnership(partnership);
@@ -861,6 +908,7 @@ const App: React.FC = () => {
                 const updatedPartnership = { ...editingPartnership, ...partnershipData };
                 setPartnerships(prev => prev.map(p => p.id === editingPartnership.id ? updatedPartnership : p));
                 addHistoryEntry(editingPartnership.id, 'Dados da parceria atualizados.');
+                recordAuditLog('Edição', 'Parceria', `Parceria atualizada: ${updatedPartnership.reference}`, `Título: "${updatedPartnership.title}" | Status: ${updatedPartnership.status}`, updatedPartnership.id);
 
                 // Send emails if changed
                 if (newResearcher && newResearcher.id !== prevResearcher.id) {
@@ -898,6 +946,8 @@ const App: React.FC = () => {
                 };
     
                 setPartnerships(prev => [newPartnership, ...prev]);
+                recordAuditLog('Criação', 'Parceria', `Nova parceria cadastrada: ${newPartnership.reference}`, `Título: "${newPartnership.title}" | Financiador: ${newPartnership.funder || 'N/A'} | Status: ${newPartnership.status}`, newPartnership.id);
+
                 if (folderWebUrl) addHistoryEntry(newPartnership.id, `Pasta do projeto ${folderStatusStr} na nuvem.`);
                 
                 // Notify Researcher
@@ -928,8 +978,10 @@ const App: React.FC = () => {
             alert('Não é possível excluir esta parceria, pois ela possui instrumentos jurídicos ou tarefas vinculadas.');
             return;
         }
+        const targetP = partnerships.find(p => p.id === partnershipId);
         if (window.confirm('Tem certeza de que deseja excluir esta parceria? Esta ação é irreversível.')) {
             setPartnerships(prev => prev.filter(p => p.id !== partnershipId));
+            recordAuditLog('Exclusão', 'Parceria', `Parceria excluída: ${targetP?.reference || partnershipId}`, `Título: "${targetP?.title || 'N/A'}"`, partnershipId);
         }
     };
 
@@ -938,6 +990,7 @@ const App: React.FC = () => {
             if (p.id === partnershipId) {
                 const updatedPartnership = { ...p, status: newStatus };
                 addHistoryEntry(p.id, `Status da parceria alterado para "${newStatus}".`);
+                recordAuditLog('Edição', 'Parceria', `Status da parceria ${p.reference} alterado`, `Novo status: "${newStatus}"`, p.id);
                 if (newStatus === PartnershipStatus.Finished || newStatus === PartnershipStatus.Rejected) {
                     [updatedPartnership.ctvResearcher, updatedPartnership.ctvBusinessPartner]
                         .filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i) // Unique recipients
@@ -948,6 +1001,7 @@ const App: React.FC = () => {
             return p;
         }));
     };
+
 
     const handleOpenTaskModal = (task: Task | null = null, preSelectedPartnershipId?: string) => {
         setEditingTask(task);
@@ -973,10 +1027,12 @@ const App: React.FC = () => {
 
             setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...taskData } : t));
             addHistoryEntry(editingTask.partnershipId, `Tarefa atualizada: "${taskData.title}"`);
+            recordAuditLog('Edição', 'Tarefa', `Tarefa atualizada: "${taskData.title}"`, `Prazo: ${taskData.dueDate} | Atribuída a ${taskData.assignedTo.map(u => u.name).join(', ')}`, editingTask.id);
         } else {
             const newTask: Task = { ...taskData, id: `t-${uuidv4()}`, completed: false, createdBy: currentUser!.email, creationDate: new Date().toISOString() };
             setTasks(prev => [newTask, ...prev]);
             addHistoryEntry(newTask.partnershipId, `Tarefa criada: "${newTask.title}"`);
+            recordAuditLog('Criação', 'Tarefa', `Nova tarefa criada: "${newTask.title}"`, `Prazo: ${newTask.dueDate} | Responsáveis: ${newTask.assignedTo.map(u => u.name).join(', ')}`, newTask.id);
             const partnership = partnerships.find(p => p.id === taskData.partnershipId);
             newTask.assignedTo.forEach(user => addNotification(NotificationService.generateNewTaskEmail(user, newTask, partnership!, currentUser!)));
         }
@@ -990,6 +1046,7 @@ const App: React.FC = () => {
             if (task.id === taskId) {
                 const completedTask = { ...task, completed: true, completedBy: currentUser!.email, completionDate: new Date().toISOString() };
                 addHistoryEntry(completedTask.partnershipId, `Tarefa concluída: "${completedTask.title}"`);
+                recordAuditLog('Edição', 'Tarefa', `Tarefa marcada como concluída: "${completedTask.title}"`, `Concluída por ${currentUser?.name || currentUser?.email}`, task.id);
                 return completedTask;
             }
             return task;
@@ -997,8 +1054,10 @@ const App: React.FC = () => {
     };
 
     const handleDeleteTask = (taskId: string) => {
+        const targetTask = tasks.find(t => t.id === taskId);
         if (window.confirm('Tem certeza de que deseja excluir esta tarefa?')) {
             setTasks(prev => prev.filter(t => t.id !== taskId));
+            recordAuditLog('Exclusão', 'Tarefa', `Tarefa excluída: "${targetTask?.title || taskId}"`, `Removida da parceria`, taskId);
         }
     };
     
@@ -1027,10 +1086,12 @@ const App: React.FC = () => {
     const handleSaveUser = (userData: Omit<User, 'id'>) => {
         if (editingUser) {
             setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...userData } : u));
+            recordAuditLog('Edição', 'Usuário', `Usuário atualizado: ${userData.name}`, `Email: ${userData.email} | Função: ${userData.role}`, editingUser.id);
         } else {
             const newUser: User = { ...userData, id: `user-${uuidv4()}` };
             setUsers(prev => [newUser, ...prev]);
             addNotification(NotificationService.generateNewUserEmail(newUser));
+            recordAuditLog('Criação', 'Usuário', `Novo usuário cadastrado: ${userData.name}`, `Email: ${userData.email} | Função: ${userData.role}`, newUser.id);
         }
         setIsUserModalOpen(false);
         setEditingUser(null);
@@ -1041,28 +1102,35 @@ const App: React.FC = () => {
             alert('Este usuário não pode ser excluído, pois está vinculado a parcerias ou tarefas.');
             return;
         }
+        const targetUser = users.find(u => u.id === userId);
         if (window.confirm('Tem certeza de que deseja excluir este usuário?')) {
             setUsers(prev => prev.filter(u => u.id !== userId));
+            recordAuditLog('Exclusão', 'Usuário', `Usuário excluído: ${targetUser?.name || userId}`, `Email: ${targetUser?.email || 'N/A'}`, userId);
         }
     };
 
     const handleSaveInternalProject = (name: string) => {
         const newProject: InternalProject = { id: uuidv4(), name: name.trim() };
         setInternalProjects(prev => [...prev, newProject]);
+        recordAuditLog('Criação', 'Projeto Interno', `Projeto Interno cadastrado: ${name.trim()}`, `Cadastrado em configurações`, newProject.id);
     };
 
     const handleUpdateInternalProject = (id: string, newName: string) => {
         setInternalProjects(prev => prev.map(p => p.id === id ? { ...p, name: newName.trim() } : p));
+        recordAuditLog('Edição', 'Projeto Interno', `Projeto Interno renomeado: ${newName.trim()}`, `ID: ${id}`, id);
     };
 
     const handleDeleteInternalProject = (projectId: string) => {
+        const targetProject = internalProjects.find(p => p.id === projectId);
         if (window.confirm('Tem certeza de que deseja excluir este projeto interno?')) {
             setInternalProjects(prev => prev.filter(p => p.id !== projectId));
+            recordAuditLog('Exclusão', 'Projeto Interno', `Projeto Interno excluído: ${targetProject?.name || projectId}`, `Removido do sistema`, projectId);
         }
     };
     
     const handleUpdateSettings = (newSettings: SystemSettings) => {
         setSystemSettings(newSettings);
+        recordAuditLog('Configuração', 'Sistema', 'Configurações do sistema atualizadas', `E-mail remetente: ${newSettings.senderEmail} | Bolsas: ${newSettings.bolsas?.length || 0}`);
         alert('Configurações salvas com sucesso!');
     };
 
@@ -1078,6 +1146,7 @@ const App: React.FC = () => {
             },
         };
         setSystemSettings(updatedSettings);
+        recordAuditLog('Manutenção', 'Sistema', `Modo Manutenção ${enabled ? 'ATIVADO' : 'DESATIVADO'}`, `Mensagem: "${message || 'Padrão'}"`);
         if (enabled) {
             alert('Modo de manutenção ATIVADO. O acesso ao sistema está agora restrito apenas a usuários Administrador Master.');
         } else {
@@ -1086,11 +1155,13 @@ const App: React.FC = () => {
     };
 
     const handleImportPartnerships = (fileContent: string) => {
+
         try {
             const parsed = parsePartnerships(fileContent, users);
             const existingRefs = new Set(partnerships.map(p => p.reference));
             const newPartnerships = parsed.filter(p => !existingRefs.has(p.reference)).map(p => ({ ...p, history: [{ id: uuidv4(), date: new Date().toISOString(), description: 'Parceria importada via CSV.', user: currentUser!.email }], documents: [], linkedInstrumentIds: [], folderWebUrl: undefined, folderId: undefined }));
             setPartnerships(prev => [...prev, ...newPartnerships]);
+            recordAuditLog('Importação', 'Parceria', `${newPartnerships.length} parcerias importadas via CSV`, `Total no arquivo: ${parsed.length}`);
             alert(`${newPartnerships.length} de ${parsed.length} novas parcerias foram importadas com sucesso!`);
         } catch (error: any) {
             alert(`Erro ao importar parcerias: ${error.message}`);
@@ -1107,6 +1178,7 @@ const App: React.FC = () => {
                     inst.linkedPartnershipIds.forEach(pId => addHistoryEntry(pId, `Instrumento Jurídico importado: Nº ${inst.id} (${inst.type})`));
                     setPartnerships(prev => prev.map(p => inst.linkedPartnershipIds.includes(p.id) ? { ...p, linkedInstrumentIds: [...new Set([...p.linkedInstrumentIds, inst.id])] } : p));
                 });
+                recordAuditLog('Importação', 'Instrumento Jurídico', `${parsed.length} instrumentos importados via CSV`, `Instrumentos vinculados com sucesso`);
             }
             alert(`${parsed.length} novos instrumentos jurídicos foram importados com sucesso!`);
         } catch (error: any) {
@@ -1120,6 +1192,7 @@ const App: React.FC = () => {
             const existingEmails = new Set(users.map(u => u.email.toLowerCase()));
             const newUsers = parsed.filter(u => !existingEmails.has(u.email.toLowerCase())).map(u => ({ ...u, id: `user-${uuidv4()}` }));
             setUsers(prev => [...prev, ...newUsers]);
+            recordAuditLog('Importação', 'Usuário', `${newUsers.length} usuários importados via CSV`, `Total no arquivo: ${parsed.length}`);
             alert(`${newUsers.length} de ${parsed.length} novos usuários foram importados com sucesso!`);
         } catch (error: any) {
             alert(`Erro ao importar usuários: ${error.message}`);
@@ -1136,6 +1209,7 @@ const App: React.FC = () => {
         let nextEssays = [...essays];
         let nextProposals = [...proposals];
         let nextSettings = { ...systemSettings };
+        let nextAuditLogs = [...systemAuditLogs];
 
         if (mode === 'replace') {
             if (importedData.partnerships) nextPartnerships = importedData.partnerships;
@@ -1159,6 +1233,7 @@ const App: React.FC = () => {
             if (importedData.essays) nextEssays = importedData.essays;
             if (importedData.proposals) nextProposals = importedData.proposals;
             if (importedData.systemSettings) nextSettings = { ...systemSettings, ...importedData.systemSettings };
+            if (importedData.systemAuditLogs) nextAuditLogs = importedData.systemAuditLogs;
         } else {
             // Modo merge (mesclar)
             if (importedData.partnerships) {
@@ -1215,6 +1290,7 @@ const App: React.FC = () => {
         setEssays(nextEssays);
         setProposals(nextProposals);
         setSystemSettings(nextSettings);
+        setSystemAuditLogs(nextAuditLogs);
 
         const newAppState: AppState = {
             users: nextUsers,
@@ -1227,8 +1303,11 @@ const App: React.FC = () => {
             internalProjects: nextInternalProjects,
             studies: nextStudies,
             essays: nextEssays,
-            proposals: nextProposals
+            proposals: nextProposals,
+            systemAuditLogs: nextAuditLogs
         };
+
+        recordAuditLog('Importação', 'Sistema', `Importação completa via arquivo .JSON (${mode === 'replace' ? 'Substituição total' : 'Mesclagem'})`, `Dados aplicados e sincronizados com Supabase.`);
 
         // Salvar imediatamente no Supabase
         await saveAllMetadataToSupabase(newAppState);
@@ -1300,6 +1379,7 @@ const App: React.FC = () => {
                  { name: `backup_tarefas_${dateStr}.csv`, content: tasksCSV },
              ]);
 
+             recordAuditLog('Backup', 'Sistema', 'Backup CSV na nuvem realizado', 'Arquivos de parcerias, instrumentos, tarefas e usuários salvos no SharePoint.');
              alert('Backup CSV realizado com sucesso na pasta do sistema no SharePoint!');
         } catch (error) {
              console.error("Backup failed:", error);
@@ -1308,6 +1388,7 @@ const App: React.FC = () => {
             setIsBackingUp(false);
         }
     };
+
     
     const handleToggleNotifications = () => {
         setIsNotificationsOpen(prev => !prev);
@@ -1458,7 +1539,10 @@ const App: React.FC = () => {
                 onDeleteInternalProject={handleDeleteInternalProject} 
                 onOpenMaintenanceModal={() => setIsMaintenanceModalOpen(true)} 
                 onOpenJsonImportModal={() => setIsJsonImportModalOpen(true)}
+                auditLogs={systemAuditLogs}
+                onClearAuditLogs={handleClearAuditLogs}
             />;
+
 
             default: 
                 return <Dashboard 
@@ -1671,7 +1755,8 @@ const App: React.FC = () => {
                     internalProjects,
                     studies,
                     essays,
-                    proposals
+                    proposals,
+                    systemAuditLogs
                 }}
                 msalInstance={msalInstance}
                 isMicrosoftSignedIn={isMicrosoftSignedIn}
@@ -1691,11 +1776,13 @@ const App: React.FC = () => {
                     internalProjects,
                     studies,
                     essays,
-                    proposals
+                    proposals,
+                    systemAuditLogs
                 }}
                 currentUser={currentUser!}
                 onApplyImportedData={handleApplyImportedJsonData}
             />
+
         </div>
     );
 

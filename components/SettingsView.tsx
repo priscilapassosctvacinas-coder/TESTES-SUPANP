@@ -1,8 +1,10 @@
 
 import React, { useRef, useState } from 'react';
-import { User, SystemSettings, InternalProject, Bolsa } from '../types';
+import { User, SystemSettings, InternalProject, Bolsa, SystemAuditLog } from '../types';
 import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, UploadIcon, TableIcon, RefreshIcon, CollectionIcon, CheckCircleIcon, XIcon, CashIcon } from './Icons';
 import { v4 as uuidv4 } from 'uuid';
+import SystemAuditLogsTab from './SystemAuditLogsTab';
+
 
 interface SettingsViewProps {
     currentUser: User;
@@ -23,6 +25,8 @@ interface SettingsViewProps {
     onDeleteInternalProject: (projectId: string) => void;
     onOpenMaintenanceModal?: () => void;
     onOpenJsonImportModal?: () => void;
+    auditLogs?: SystemAuditLog[];
+    onClearAuditLogs?: () => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({ 
@@ -43,8 +47,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     onUpdateInternalProject,
     onDeleteInternalProject,
     onOpenMaintenanceModal,
-    onOpenJsonImportModal
+    onOpenJsonImportModal,
+    auditLogs = [],
+    onClearAuditLogs
 }) => {
+    const isMasterAdmin = currentUser.role === 'Administrador Master';
+    const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'audit'>('general');
+
 
     const partnershipFileRef = useRef<HTMLInputElement>(null);
     const instrumentFileRef = useRef<HTMLInputElement>(null);
@@ -267,10 +276,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         );
     }
 
-    const isMasterAdmin = currentUser.role === 'Administrador Master';
-
     return (
         <div className="w-full space-y-8">
+
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-semibold text-gray-700">Configurações</h2>
                 <button 
@@ -292,7 +300,50 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
             </div>
 
-            {/* Painel Exclusivo do Administrador Master: Controle de Acesso e Manutenção */}
+            {/* Abas de Navegação de Configurações */}
+            <div className="flex border-b border-gray-200 gap-2">
+                <button
+                    type="button"
+                    onClick={() => setActiveSettingsTab('general')}
+                    className={`py-3 px-5 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+                        activeSettingsTab === 'general'
+                            ? 'border-teal-600 text-teal-800 bg-teal-50/60 rounded-t-lg'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                >
+                    <span>⚙️</span>
+                    Configurações Gerais
+                </button>
+
+                {isMasterAdmin && (
+                    <button
+                        type="button"
+                        onClick={() => setActiveSettingsTab('audit')}
+                        className={`py-3 px-5 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+                            activeSettingsTab === 'audit'
+                                ? 'border-amber-500 text-amber-950 bg-amber-50/70 rounded-t-lg shadow-2xs'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        <span>📋</span>
+                        Registro de Alterações (Auditoria)
+                        <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-amber-400 text-amber-950 ml-1">
+                            Master
+                        </span>
+                    </button>
+                )}
+            </div>
+
+            {activeSettingsTab === 'audit' && isMasterAdmin ? (
+                <SystemAuditLogsTab
+                    currentUser={currentUser}
+                    auditLogs={auditLogs}
+                    onClearLogs={onClearAuditLogs}
+                />
+            ) : (
+                <>
+                    {/* Painel Exclusivo do Administrador Master: Controle de Acesso e Manutenção */}
+
             {isMasterAdmin && (
                 <div className={`p-6 rounded-xl border shadow-md transition-all ${
                     systemSettings.maintenanceMode?.enabled
@@ -955,8 +1006,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                     </table>
                 </div>
             </div>
+            </>
+            )}
         </div>
     );
 };
+
 
 export default SettingsView;
