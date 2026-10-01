@@ -14,10 +14,11 @@ import {
 
 export const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://ytjhipjsigaalboztcdz.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_k2L5BEVW3R7eP7d2qRbl1g_Dcks_vFa';
-export const SUPABASE_SECRET_KEY = (import.meta as any).env?.VITE_SUPABASE_SECRET_KEY || 'sb_secret_yqL3vKToavVMg6ssIx-DtQ_TMvDdTiv';
 
-// Prefer secret key if available for administrative/metadata persistence without RLS restrictions, otherwise publishable key
-export const SUPABASE_ANON_KEY = SUPABASE_SECRET_KEY || SUPABASE_PUBLISHABLE_KEY;
+// No navegador (frontend SPA), a chave DEVE ser a chave pública/anon (sb_publishable_...).
+// O uso de 'sb_secret_...' em requisições de navegador é bloqueado pelo Supabase com o erro: "Forbidden use of secret API key in browser".
+export const SUPABASE_ANON_KEY = SUPABASE_PUBLISHABLE_KEY;
+
 
 export const SCHEMA_NAME = 'negocios_parcerias';
 
