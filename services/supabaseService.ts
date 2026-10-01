@@ -27,24 +27,24 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         schema: SCHEMA_NAME
     },
     auth: {
-        persistSession: true,
-        autoRefreshToken: true
+        persistSession: false,
+        autoRefreshToken: false
     }
 });
 
-// Cliente alternativo apontando para o schema 'public' para fallback com prefixo 'np_'
+// Cliente alternativo apontando para o schema 'public' para fallback com prefixo 'np_' ou tabelas públicas
 export const supabasePublic = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     db: {
         schema: 'public'
     },
     auth: {
-        persistSession: true,
-        autoRefreshToken: true
+        persistSession: false,
+        autoRefreshToken: false
     }
 });
 
-// Cache do modo de acesso às tabelas ('schema' para negocios_parcerias.* ou 'public' para np_*)
-let activeStorageMode: 'schema' | 'public' | null = null;
+// Cache do modo de acesso às tabelas ('schema' para negocios_parcerias.*, 'public_np' para np_*, 'public' para public.*)
+let activeStorageMode: 'schema' | 'public_np' | 'public' | null = null;
 
 export interface SupabaseHealthCheck {
     connected: boolean;
@@ -69,7 +69,7 @@ const REQUIRED_TABLES = [
 
 /**
  * Testa a conectividade com o Supabase e detecta se o schema negocios_parcerias
- * ou as tabelas públicas (np_*) estão ativas.
+ * ou as tabelas públicas (np_* ou sem prefixo) estão ativas.
  */
 export async function testSupabaseConnection(): Promise<SupabaseHealthCheck> {
     const result: SupabaseHealthCheck = {
@@ -80,20 +80,21 @@ export async function testSupabaseConnection(): Promise<SupabaseHealthCheck> {
         message: ''
     };
 
+    let lastErrorMessage = '';
+
     try {
         // 1. Testa acesso ao schema dedicado 'negocios_parcerias'
         const schemaChecks = await Promise.all(
             REQUIRED_TABLES.map(async (table) => {
                 try {
-                    let q: any;
-                    if (typeof (supabase as any).schema === 'function') {
-                        q = (supabase as any).schema(SCHEMA_NAME).from(table);
-                    } else {
-                        q = supabase.from(table);
+                    const { error } = await supabase.from(table).select('*').limit(1);
+                    if (error) {
+                        lastErrorMessage = error.message;
+                        return { table, ok: false };
                     }
-                    const { error } = await q.select('id').limit(1);
-                    return { table, ok: !error };
-                } catch {
+                    return { table, ok: true };
+                } catch (e: any) {
+                    lastErrorMessage = e.message || String(e);
                     return { table, ok: false };
                 }
             })
@@ -101,7 +102,7 @@ export async function testSupabaseConnection(): Promise<SupabaseHealthCheck> {
 
         const schemaWorking = schemaChecks.filter(c => c.ok).length;
 
-        if (schemaWorking >= 3) {
+        if (schemaWorking >= 2) {
             activeStorageMode = 'schema';
             result.connected = true;
             result.storageMode = 'schema';
@@ -114,11 +115,42 @@ export async function testSupabaseConnection(): Promise<SupabaseHealthCheck> {
         }
 
         // 2. Fallback: Testa tabelas no schema 'public' com prefixo 'np_'
-        const publicChecks = await Promise.all(
+        const publicNpChecks = await Promise.all(
             REQUIRED_TABLES.map(async (table) => {
                 try {
                     const publicTable = `np_${table}`;
-                    const { error } = await supabasePublic.from(publicTable).select('id').limit(1);
+                    const { error } = await supabasePublic.from(publicTable).select('*').limit(1);
+                    if (error) {
+                        lastErrorMessage = error.message;
+                        return { table, ok: false };
+                    }
+                    return { table, ok: true };
+                } catch (e: any) {
+                    lastErrorMessage = e.message || String(e);
+                    return { table, ok: false };
+                }
+            })
+        );
+
+        const publicNpWorking = publicNpChecks.filter(c => c.ok).length;
+
+        if (publicNpWorking >= 2) {
+            activeStorageMode = 'public_np';
+            result.connected = true;
+            result.storageMode = 'public';
+            publicNpChecks.forEach(c => {
+                result.tablesStatus[c.table] = c.ok;
+                if (!c.ok) result.missingTables.push(`np_${c.table}`);
+            });
+            result.message = `Conectado ao Supabase no schema 'public' com prefixo 'np_' (${publicNpWorking}/${REQUIRED_TABLES.length} tabelas prontas).`;
+            return result;
+        }
+
+        // 3. Fallback: Testa tabelas no schema 'public' SEM prefixo
+        const publicDirectChecks = await Promise.all(
+            REQUIRED_TABLES.map(async (table) => {
+                try {
+                    const { error } = await supabasePublic.from(table).select('*').limit(1);
                     return { table, ok: !error };
                 } catch {
                     return { table, ok: false };
@@ -126,28 +158,30 @@ export async function testSupabaseConnection(): Promise<SupabaseHealthCheck> {
             })
         );
 
-        const publicWorking = publicChecks.filter(c => c.ok).length;
+        const publicDirectWorking = publicDirectChecks.filter(c => c.ok).length;
 
-        if (publicWorking >= 3) {
+        if (publicDirectWorking >= 2) {
             activeStorageMode = 'public';
             result.connected = true;
             result.storageMode = 'public';
-            publicChecks.forEach(c => {
+            publicDirectChecks.forEach(c => {
                 result.tablesStatus[c.table] = c.ok;
-                if (!c.ok) result.missingTables.push(`np_${c.table}`);
+                if (!c.ok) result.missingTables.push(c.table);
             });
-            result.message = `Conectado ao Supabase no schema 'public' (${publicWorking}/${REQUIRED_TABLES.length} tabelas prontas).`;
+            result.message = `Conectado ao Supabase no schema 'public' (${publicDirectWorking}/${REQUIRED_TABLES.length} tabelas prontas).`;
             return result;
         }
 
-        // Se nenhuma das duas opções respondeu as tabelas
-        result.connected = true; // Servidor respondeu, mas tabelas precisam do script SQL
+        // Se nenhuma das opções respondeu
+        result.connected = true;
         result.storageMode = 'none';
         REQUIRED_TABLES.forEach(t => {
             result.tablesStatus[t] = false;
             result.missingTables.push(t);
         });
-        result.message = 'Supabase acessível, mas as tabelas ainda não foram criadas. Execute o script SQL no Supabase Dashboard.';
+        result.message = lastErrorMessage 
+            ? `Supabase acessível, mas respondeu: "${lastErrorMessage}". Execute o script SQL no Supabase Dashboard.`
+            : 'Supabase acessível, mas as tabelas ainda não foram criadas. Execute o script SQL no Supabase Dashboard.';
         return result;
 
     } catch (e: any) {
@@ -161,14 +195,15 @@ export async function testSupabaseConnection(): Promise<SupabaseHealthCheck> {
  * Retorna o query builder apontando para o schema correto
  */
 export function getTableQuery(tableName: string) {
-    if (activeStorageMode === 'public') {
+    if (activeStorageMode === 'public_np') {
         return supabasePublic.from(`np_${tableName}`);
     }
-    if (typeof (supabase as any).schema === 'function') {
-        return (supabase as any).schema(SCHEMA_NAME).from(tableName);
+    if (activeStorageMode === 'public') {
+        return supabasePublic.from(tableName);
     }
     return supabase.from(tableName);
 }
+
 
 
 // --- CONVERSÕES DE METADADOS (CamelCase <-> Snake_Case) ---
@@ -497,10 +532,40 @@ export async function loadAllMetadataFromSupabase(): Promise<Partial<AppState> |
 // --- SALVAMENTO TOTAL / MIGRAÇÃO DOS DADOS NO SUPABASE ---
 
 export async function saveAllMetadataToSupabase(state: AppState): Promise<{ success: boolean; error?: string }> {
-    const health = await testSupabaseConnection();
+    let health = await testSupabaseConnection();
+
+    // Se o health check inicial falhou, tenta verificar diretamente se a tabela principal responde
     if (!health.connected || health.storageMode === 'none') {
-        return { success: false, error: 'Tabelas do Supabase não encontradas. Execute o script SQL no dashboard.' };
+        const directSchema = await supabase.from('users').select('*').limit(1);
+        if (!directSchema.error) {
+            activeStorageMode = 'schema';
+            health.connected = true;
+            health.storageMode = 'schema';
+        } else {
+            const directPublicNp = await supabasePublic.from('np_users').select('*').limit(1);
+            if (!directPublicNp.error) {
+                activeStorageMode = 'public_np';
+                health.connected = true;
+                health.storageMode = 'public';
+            } else {
+                const directPublic = await supabasePublic.from('users').select('*').limit(1);
+                if (!directPublic.error) {
+                    activeStorageMode = 'public';
+                    health.connected = true;
+                    health.storageMode = 'public';
+                }
+            }
+        }
     }
+
+    if (!health.connected || health.storageMode === 'none') {
+        return { 
+            success: false, 
+            error: health.message || 'Tabelas do Supabase não encontradas. Execute o script SQL no dashboard.' 
+        };
+    }
+
+    const syncErrors: string[] = [];
 
     try {
         // 1. Users
@@ -514,28 +579,40 @@ export async function saveAllMetadataToSupabase(state: AppState): Promise<{ succ
                 updated_at: new Date().toISOString()
             }));
             const { error } = await getTableQuery('users').upsert(userRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar users:", error);
+            if (error) {
+                console.error("Erro ao sincronizar users:", error);
+                syncErrors.push(`Usuários: ${error.message}`);
+            }
         }
 
         // 2. Partnerships
         if (state.partnerships && state.partnerships.length > 0) {
             const partRows = state.partnerships.map(mapPartnershipToRow);
             const { error } = await getTableQuery('partnerships').upsert(partRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar partnerships:", error);
+            if (error) {
+                console.error("Erro ao sincronizar partnerships:", error);
+                syncErrors.push(`Parcerias: ${error.message}`);
+            }
         }
 
         // 3. Legal Instruments
         if (state.legalInstruments && state.legalInstruments.length > 0) {
             const instRows = state.legalInstruments.map(mapLegalInstrumentToRow);
             const { error } = await getTableQuery('legal_instruments').upsert(instRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar legal_instruments:", error);
+            if (error) {
+                console.error("Erro ao sincronizar legal_instruments:", error);
+                syncErrors.push(`Instrumentos Jurídicos: ${error.message}`);
+            }
         }
 
         // 4. Tasks
         if (state.tasks && state.tasks.length > 0) {
             const taskRows = state.tasks.map(mapTaskToRow);
             const { error } = await getTableQuery('tasks').upsert(taskRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar tasks:", error);
+            if (error) {
+                console.error("Erro ao sincronizar tasks:", error);
+                syncErrors.push(`Tarefas: ${error.message}`);
+            }
         }
 
         // 5. Internal Projects
@@ -546,28 +623,40 @@ export async function saveAllMetadataToSupabase(state: AppState): Promise<{ succ
                 updated_at: new Date().toISOString()
             }));
             const { error } = await getTableQuery('internal_projects').upsert(projRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar internal_projects:", error);
+            if (error) {
+                console.error("Erro ao sincronizar internal_projects:", error);
+                syncErrors.push(`Projetos Internos: ${error.message}`);
+            }
         }
 
         // 6. Essays
         if (state.essays && state.essays.length > 0) {
             const essayRows = state.essays.map(mapEssayToRow);
             const { error } = await getTableQuery('essays').upsert(essayRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar essays:", error);
+            if (error) {
+                console.error("Erro ao sincronizar essays:", error);
+                syncErrors.push(`Ensaios: ${error.message}`);
+            }
         }
 
         // 7. Studies
         if (state.studies && state.studies.length > 0) {
             const studyRows = state.studies.map(mapStudyToRow);
             const { error } = await getTableQuery('studies').upsert(studyRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar studies:", error);
+            if (error) {
+                console.error("Erro ao sincronizar studies:", error);
+                syncErrors.push(`Estudos: ${error.message}`);
+            }
         }
 
         // 8. Proposals
         if (state.proposals && state.proposals.length > 0) {
             const propRows = state.proposals.map(mapProposalToRow);
             const { error } = await getTableQuery('proposals').upsert(propRows, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar proposals:", error);
+            if (error) {
+                console.error("Erro ao sincronizar proposals:", error);
+                syncErrors.push(`Propostas: ${error.message}`);
+            }
         }
 
         // 9. System Settings
@@ -582,7 +671,10 @@ export async function saveAllMetadataToSupabase(state: AppState): Promise<{ succ
                 updated_at: new Date().toISOString()
             };
             const { error } = await getTableQuery('system_settings').upsert(settingRow, { onConflict: 'id' });
-            if (error) console.error("Erro ao sincronizar system_settings:", error);
+            if (error) {
+                console.error("Erro ao sincronizar system_settings:", error);
+                syncErrors.push(`Configurações: ${error.message}`);
+            }
         }
 
         // 11. System Metadata
@@ -592,14 +684,24 @@ export async function saveAllMetadataToSupabase(state: AppState): Promise<{ succ
             { key: 'system_audit_logs', value: state.systemAuditLogs || [] }
         ];
 
-
         for (const item of metadataItems) {
-            await getTableQuery('system_metadata').upsert({
+            const { error } = await getTableQuery('system_metadata').upsert({
                 key: item.key,
                 value: item.value,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'key' });
+            if (error) {
+                console.error(`Erro ao sincronizar metadata ${item.key}:`, error);
+                syncErrors.push(`Metadados (${item.key}): ${error.message}`);
+            }
         }
+
+        if (syncErrors.length > 0) {
+            const joined = syncErrors.join(' | ');
+            await logSyncEvent('supabase_save', 'error', { error: joined });
+            return { success: false, error: joined };
+        }
+
 
         await logSyncEvent('supabase_save', 'success', {
             totalPartnerships: state.partnerships?.length || 0,

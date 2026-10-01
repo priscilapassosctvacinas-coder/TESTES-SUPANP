@@ -257,6 +257,26 @@ ALTER TABLE public.np_system_settings DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.np_system_metadata DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.np_sync_logs DISABLE ROW LEVEL SECURITY;
 
+-- Políticas de RLS permissivas irrestritas (para garantir que anon, authenticated e service_role nunca sejam bloqueados)
+DO $$
+DECLARE
+    tbl text;
+BEGIN
+    FOR tbl IN SELECT tablename FROM pg_tables WHERE schemaname = 'negocios_parcerias'
+    LOOP
+        EXECUTE format('ALTER TABLE negocios_parcerias.%I ENABLE ROW LEVEL SECURITY', tbl);
+        EXECUTE format('DROP POLICY IF EXISTS "permitir_tudo" ON negocios_parcerias.%I', tbl);
+        EXECUTE format('CREATE POLICY "permitir_tudo" ON negocios_parcerias.%I FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true)', tbl);
+    END LOOP;
+
+    FOR tbl IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'np_%'
+    LOOP
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
+        EXECUTE format('DROP POLICY IF EXISTS "permitir_tudo" ON public.%I', tbl);
+        EXECUTE format('CREATE POLICY "permitir_tudo" ON public.%I FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true)', tbl);
+    END LOOP;
+END $$;
+
 ALTER TABLE IF EXISTS negocios_parcerias.users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE IF EXISTS negocios_parcerias.users DROP CONSTRAINT IF EXISTS users_role_check1;
 ALTER TABLE IF EXISTS negocios_parcerias.users ADD CONSTRAINT users_role_check 
@@ -274,7 +294,11 @@ ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';
 
 INSERT INTO public.np_users (id, name, email, role, platform)
 VALUES ('user-priscila-master', 'Priscila Passos', 'priscilapassos@ctvacinas.org', 'Administrador Master', 'Microsoft')
-ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';`;
+ON CONFLICT (id) DO UPDATE SET role = 'Administrador Master';
+
+-- Notifica o PostgREST para recarregar o schema cache imediatamente
+NOTIFY pgrst, 'reload schema';`;
+
 
 
 
